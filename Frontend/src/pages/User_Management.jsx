@@ -1,0 +1,1161 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Users,
+  Search,
+  Filter,
+  Download,
+  Eye,
+  Edit,
+  Trash2,
+  UserPlus,
+  Mail,
+  Phone,
+  Calendar,
+  Clock,
+  CheckCircle,
+  XCircle,
+  Building,
+  Briefcase,
+  User,
+  TrendingUp,
+  DollarSign,
+  X,
+  AlertTriangle,
+  Shield,
+  ShieldOff,
+  Save,
+  UserCheck,
+  UserX,
+  LogOut
+} from 'lucide-react';
+import apiService from '../services/api';
+import { formatDate } from '../utils/dateUtils';
+
+// Helper component for User Avatar to handle image loading errors reliably
+const UserAvatar = ({ src, name, className, initialsSizeClass = "text-sm" }) => {
+  const [imgError, setImgError] = useState(false);
+
+  // Reset error when src changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
+  if (!src || imgError) {
+    return (
+      <div className={`rounded-full bg-blue-500 flex items-center justify-center ${className}`}>
+        <span className={`text-white font-medium ${initialsSizeClass}`}>
+          {(name || 'U').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name || 'User'}
+      className={`rounded-full object-cover ${className}`}
+      onError={() => setImgError(true)}
+      referrerPolicy="no-referrer"
+      crossOrigin="anonymous"
+    />
+  );
+};
+
+const UserManagement = () => {
+  // API data states
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [totalUsers, setTotalUsers] = useState(0);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [limit, setLimit] = useState(20);
+
+  // UI states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [sortBy, setSortBy] = useState('created');
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'free', 'paid', 'expired', etc.
+
+  // Modal states
+  const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [suspensionReason, setSuspensionReason] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const navigate = useNavigate();
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1); // Reset to first page on search
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch users data from API
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        // Pass parameters to the API for backend pagination and search
+        const params = {
+          filter_status: activeTab,
+          search_query: debouncedSearch,
+          page: currentPage,
+          limit: limit
+        };
+
+        const response = await apiService.getAllUsersWithAccounts(params);
+
+        if (response && response.success) {
+          setUsers(Array.isArray(response.users) ? response.users : []);
+          setTotalUsers(response.pagination?.total_users || response.total_users || 0);
+          setTotalPages(response.pagination?.total_pages || 1);
+        } else {
+          setError('Failed to fetch users data');
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err);
+        setError(err.message || 'Failed to fetch users data');
+        setUsers([]);
+        setTotalUsers(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, [activeTab, debouncedSearch, currentPage, limit]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  // Sort users (client-side sorting for the current page)
+  const sortedUsers = [...users].sort((a, b) => {
+    switch (sortBy) {
+      case 'name':
+        return (a.name || '').localeCompare(b.name || '');
+      case 'email':
+        return (a.email || '').localeCompare(b.email || '');
+      case 'created':
+        return new Date(b.createtime || 0) - new Date(a.createtime || 0);
+      case 'accounts':
+        return (b.account_counts?.total || 0) - (a.account_counts?.total || 0);
+      default:
+        return 0;
+    }
+  });
+
+  const filteredUsers = sortedUsers.filter(user => {
+    // Secondary client-side filters if needed (currently handling status on backend)
+    const matchesFilter =
+      filterType === 'all' ||
+      (filterType === 'active' && user.active_flag === 1) ||
+      (filterType === 'inactive' && user.active_flag === 0) ||
+      (filterType === 'complete' && user.profile_complete === 1) ||
+      (filterType === 'incomplete' && user.profile_complete === 0);
+
+    return matchesFilter;
+  });
+
+  // Get account type icon
+  const getAccountTypeIcon = (type) => {
+    switch (type) {
+      case 'personal':
+        return <User className="w-4 h-4 text-blue-500" />;
+      case 'business':
+        return <Building className="w-4 h-4 text-green-500" />;
+      case 'freelance':
+        return <Briefcase className="w-4 h-4 text-purple-500" />;
+      default:
+        return <User className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  // Get account type color
+  const getAccountTypeColor = (type) => {
+    switch (type) {
+      case 'personal':
+        return 'bg-blue-100 text-blue-800';
+      case 'business':
+        return 'bg-green-100 text-green-800';
+      case 'freelance':
+        return 'bg-purple-100 text-purple-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+
+  // Export filtered users to CSV
+  const exportToCSV = () => {
+    if (filteredUsers.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    // Prepare CSV data
+    const csvHeaders = [
+      'User ID',
+      'Name',
+      'Email',
+      'Mobile',
+      'Phone Code',
+      'Status',
+      'Profile Complete',
+      'Personal Accounts',
+      'Business Accounts',
+      'Freelance Accounts',
+      'Total Accounts',
+      'Created Date'
+    ];
+
+    const csvData = filteredUsers.map(user => [
+      user.user_id || '',
+      user.name || '',
+      user.email || '',
+      user.mobile || '',
+      user.phone_code || '',
+      user.active_flag === 1 ? 'Active' : 'Inactive',
+      user.profile_complete === 1 ? 'Complete' : 'Incomplete',
+      user.account_counts?.personal || 0,
+      user.account_counts?.business || 0,
+      user.account_counts?.freelance || 0,
+      user.account_counts?.total || 0,
+      formatDate(user.createtime)
+    ]);
+
+    // Create CSV content
+    const csvContent = [
+      csvHeaders.join(','),
+      ...csvData.map(row => row.map(field => `"${field}"`).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+
+    // Generate filename based on current filter
+    const filterSuffix = filterType === 'all' ? 'all' : filterType;
+    const searchSuffix = searchQuery ? `_search_${searchQuery.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+    const filename = `users_${filterSuffix}${searchSuffix}_${new Date().toISOString().split('T')[0]}.csv`;
+
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handler functions
+  // Handler functions
+  const handleViewUser = (user) => {
+    navigate(`/admin/view-user/${user.user_id}`);
+  };
+
+  const handleSuspendUser = (user) => {
+    setSelectedUser(user);
+    setSuspensionReason('');
+    setShowSuspendModal(true);
+  };
+
+  const handleUnsuspendUser = async (user) => {
+    if (!window.confirm(`Are you sure you want to unsuspend ${user.name || 'this user'}?`)) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      const response = await apiService.activateUser(user.user_id, 'User reactivated by admin');
+      if (response.success) {
+        // Refresh the users list
+        const usersResponse = await apiService.getAllUsersWithAccounts();
+        if (usersResponse && usersResponse.success) {
+          setUsers(Array.isArray(usersResponse.users) ? usersResponse.users : []);
+        }
+        alert('User activated successfully');
+      }
+    } catch (err) {
+      console.error('Error activating user:', err);
+      alert('Failed to activate user');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteUser = (user) => {
+    setSelectedUser(user);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setIsDeleting(true);
+      const response = await apiService.permanentlyDeleteUser(selectedUser.user_id);
+
+      if (response && response.success) {
+        // Remove user from local state
+        setUsers(prevUsers => prevUsers.filter(u => u.user_id !== selectedUser.user_id));
+        setTotalUsers(prev => prev - 1);
+        setShowDeleteModal(false);
+        setSelectedUser(null);
+        alert('User permanently deleted successfully');
+      } else {
+        alert(response?.msg?.[0] || 'Failed to delete user');
+      }
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      alert(err.response?.data?.msg?.[0] || 'Failed to delete user. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleConfirmSuspend = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setIsProcessing(true);
+      const response = await apiService.suspendUser(selectedUser.user_id, suspensionReason);
+      if (response.success) {
+        // Refresh the users list
+        const usersResponse = await apiService.getAllUsersWithAccounts();
+        if (usersResponse && usersResponse.success) {
+          setUsers(Array.isArray(usersResponse.users) ? usersResponse.users : []);
+        }
+        setShowSuspendModal(false);
+        setSelectedUser(null);
+        setSuspensionReason('');
+        alert('User suspended successfully');
+      }
+    } catch (err) {
+      console.error('Error suspending user:', err);
+      alert('Failed to suspend user');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleForceLogout = async (user) => {
+    if (!window.confirm(`Are you sure you want to force logout ${user.name || 'this user'}? Their current session will be terminated immediately.`)) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      const response = await apiService.forceLogoutUsers({
+        user_ids: [user.user_id],
+        select_all: false
+      });
+      
+      if (response && response.success) {
+        alert(response.msg[0] || 'Force logout initiated successfully');
+      } else {
+        alert(response?.msg?.[0] || 'Failed to initiate force logout');
+      }
+    } catch (err) {
+      console.error('Error in force logout:', err);
+      alert('An error occurred while initiating force logout');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleForceLogoutAll = async () => {
+    if (!window.confirm('WARNING: Are you sure you want to force logout ALL mobile users? This will terminate all active sessions.')) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      const response = await apiService.forceLogoutUsers({
+        select_all: true
+      });
+      
+      if (response && response.success) {
+        alert(response.msg[0] || 'Force logout initiated for all users');
+      } else {
+        alert(response?.msg?.[0] || 'Failed to initiate force logout for all users');
+      }
+    } catch (err) {
+      console.error('Error in force logout all:', err);
+      alert('An error occurred while initiating force logout for all users');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const closeModals = () => {
+    setShowSuspendModal(false);
+    setShowDeleteModal(false);
+    setSelectedUser(null);
+    setSuspensionReason('');
+  };
+
+  // Loading component
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 font-medium">Loading users data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error component
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Data</h3>
+          <p className="text-red-600">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
+      {/* Header */}
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-2">User Management</h1>
+        <p className="text-sm sm:text-base text-gray-600">Manage users and their account information</p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center">
+            <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500" />
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Total Users</p>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">{totalUsers}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center">
+            <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-500" />
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Active Users</p>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
+                {users.filter(user => user.active_flag === 1).length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center">
+            <User className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500" />
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Profile Complete</p>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
+                {users.filter(user => user.profile_complete === 1).length}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
+          <div className="flex items-center">
+            <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500" />
+            <div className="ml-3 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600">Total Accounts</p>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">
+                {users.reduce((total, user) => total + (user.account_counts?.total || 0), 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex space-x-2 sm:space-x-4 mb-4 sm:mb-6 overflow-x-auto pb-2 sm:pb-0">
+        <button
+          onClick={() => handleTabChange('all')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'all'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          All Users
+        </button>
+        <button
+          onClick={() => handleTabChange('free')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'free'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Free Users
+        </button>
+        <button
+          onClick={() => handleTabChange('paid')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'paid'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Paid Users
+        </button>
+        <button
+          onClick={() => handleTabChange('expired')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'expired'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Expired Users
+        </button>
+        <button
+          onClick={() => handleTabChange('active')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'active'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Active Users
+        </button>
+        <button
+          onClick={() => handleTabChange('inactive')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'inactive'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Inactive Users
+        </button>
+        <button
+          onClick={() => handleTabChange('profile_complete')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'profile_complete'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Profile Complete
+        </button>
+        <button
+          onClick={() => handleTabChange('profile_incomplete')}
+          className={`px-4 py-2 font-medium text-sm rounded-md transition-colors whitespace-nowrap ${activeTab === 'profile_incomplete'
+            ? 'bg-blue-600 text-white shadow-sm'
+            : 'bg-white text-gray-600 hover:bg-gray-100'
+            }`}
+        >
+          Profile Incomplete
+        </button>
+      </div>
+
+      {/* Search and Filter Bar */}
+      <div className="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
+          {/* Search */}
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
+              <input
+                type="text"
+                placeholder="Search users by name, email, or mobile..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+              />
+            </div>
+          </div>
+
+          {/* Filter */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+            >
+              <option value="name">Sort by Name</option>
+              <option value="email">Sort by Email</option>
+              <option value="created">Sort by Created Date</option>
+              <option value="accounts">Sort by Account Count</option>
+            </select>
+
+            <button
+              onClick={exportToCSV}
+              className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Export ({filteredUsers.length})</span>
+              <span className="sm:hidden">Export</span>
+            </button>
+
+            <button
+              onClick={handleForceLogoutAll}
+              className="px-3 sm:px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
+              title="Force Logout All Users"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Force Logout All</span>
+              <span className="sm:hidden">Logout All</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Users List */}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        {loading && filteredUsers.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span className="ml-2 text-gray-600">Loading users...</span>
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User Info
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Contact
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Accounts
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Created
+                    </th>
+
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredUsers.map((user) => (
+                    <tr key={user.user_id} className="hover:bg-gray-50">
+                      {/* User Info */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <UserAvatar
+                              src={user.profile_photo}
+                              name={user.name}
+                              className="h-10 w-10"
+                            />
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">{user.name || 'Unknown User'}</div>
+                            <div className="text-sm text-gray-500">ID: {user.user_id || 'N/A'}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Contact */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900 flex items-center gap-1">
+                          <Mail className="w-4 h-4 text-gray-400" />
+                          {user.email || 'No email'}
+                        </div>
+                        <div className="text-sm text-gray-500 flex items-center gap-1">
+                          <Phone className="w-4 h-4 text-gray-400" />
+                          {user.phone_code || ''} {user.mobile || 'No mobile'}
+                        </div>
+                      </td>
+
+                      {/* User Type */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.user_type === 0 || user.user_type === '0'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-blue-100 text-blue-800'
+                            }`}>
+                            {user.user_type_label || (user.user_type === 0 || user.user_type === '0' ? 'Manager' : 'User')}
+                          </span>
+                          {user.is_paid_user === 1 && (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                              Premium
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Accounts */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-wrap gap-1">
+                          {user.accounts && Object.entries(user.accounts).map(([type, accounts]) => (
+                            accounts.length > 0 && (
+                              <span
+                                key={type}
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full ${getAccountTypeColor(type)}`}
+                              >
+                                {getAccountTypeIcon(type)}
+                                {type} ({accounts.length})
+                              </span>
+                            )
+                          ))}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Total: {user.account_counts?.total || 0} accounts
+                        </div>
+                      </td>
+
+                      {/* Created Date */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4 text-gray-400" />
+                          {formatDate(user.createtime)}
+                        </div>
+                      </td>
+
+                      {/* Last Login */}
+
+
+                      {/* Actions */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleViewUser(user)}
+                            className="text-blue-600 hover:text-blue-900 p-1"
+                            title="View User Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {user.active_flag === 1 ? (
+                            <button
+                              onClick={() => handleSuspendUser(user)}
+                              className="text-orange-600 hover:text-orange-900 p-1"
+                              title="Suspend User"
+                            >
+                              <UserX className="w-4 h-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUnsuspendUser(user)}
+                              className="text-green-600 hover:text-green-900 p-1"
+                              title="Unsuspend User"
+                            >
+                              <UserCheck className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleForceLogout(user)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            title="Force Logout User"
+                          >
+                            <LogOut className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="text-red-600 hover:text-red-900 p-1"
+                            title="Permanently Delete User"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile/Tablet Card View */}
+            <div className="lg:hidden">
+              {filteredUsers.map((user) => (
+                <div key={user.user_id} className="border-b border-gray-200 p-4 hover:bg-gray-50">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3 min-w-0 flex-1">
+                      {/* Avatar */}
+                      <div className="flex-shrink-0">
+                        <UserAvatar
+                          src={user.profile_photo}
+                          name={user.name}
+                          className="h-10 w-10"
+                        />
+                      </div>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="text-sm font-medium text-gray-900 truncate">{user.name || 'Unknown User'}</h3>
+                          <span className="text-xs text-gray-500">ID: {user.user_id || 'N/A'}</span>
+                        </div>
+
+                        {/* Contact Info */}
+                        <div className="space-y-1 mb-2">
+                          <div className="text-xs text-gray-600 flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-gray-400" />
+                            <span className="truncate">{user.email || 'No email'}</span>
+                          </div>
+                          <div className="text-xs text-gray-600 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-gray-400" />
+                            <span>{user.phone_code || ''} {user.mobile || 'No mobile'}</span>
+                          </div>
+                        </div>
+
+                        {/* User Type Badge */}
+                        <div className="mb-2 flex gap-2">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.user_type === 0 || user.user_type === '0'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-blue-100 text-blue-800'
+                            }`}>
+                            {user.user_type_label || (user.user_type === 0 || user.user_type === '0' ? 'Manager' : 'User')}
+                          </span>
+                          {user.is_paid_user === 1 && (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                              Premium
+                            </span>
+                          )}
+                        </div>
+
+
+
+
+                        {/* Account Info */}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {user.accounts && Object.entries(user.accounts).map(([type, accounts]) => (
+                            accounts.length > 0 && (
+                              <span
+                                key={type}
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full ${getAccountTypeColor(type)}`}
+                              >
+                                {getAccountTypeIcon(type)}
+                                {type} ({accounts.length})
+                              </span>
+                            )
+                          ))}
+                        </div>
+
+                        {/* Created Date */}
+                        <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-gray-400" />
+                          <span>{formatDate(user.createtime)}</span>
+                        </div>
+                        {/* Last Login */}
+
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex space-x-1 ml-2">
+                      <button
+                        onClick={() => handleViewUser(user)}
+                        className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50"
+                        title="View User Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      {user.active_flag === 1 ? (
+                        <button
+                          onClick={() => handleSuspendUser(user)}
+                          className="text-orange-600 hover:text-orange-900 p-2 rounded-lg hover:bg-orange-50"
+                          title="Suspend User"
+                        >
+                          <UserX className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleUnsuspendUser(user)}
+                          className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50"
+                          title="Unsuspend User"
+                        >
+                          <UserCheck className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleForceLogout(user)}
+                        className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50"
+                        title="Force Logout User"
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user)}
+                        className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50"
+                        title="Permanently Delete User"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {filteredUsers.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No users found</h3>
+            <p className="text-gray-500">Try adjusting your search or filter criteria.</p>
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <div className="flex-1 flex justify-between sm:hidden">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing <span className="font-medium">{(currentPage - 1) * limit + 1}</span> to <span className="font-medium">{Math.min(currentPage * limit, totalUsers)}</span> of <span className="font-medium">{totalUsers}</span> results
+                </p>
+              </div>
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Previous</span>
+                    <Clock className="h-5 w-5 rotate-180" /> {/* Using rotate clock as back icon if Chevron is not available */}
+                  </button>
+                  {[...Array(totalPages)].map((_, i) => (
+                    <button
+                      key={i + 1}
+                      onClick={() => handlePageChange(i + 1)}
+                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${currentPage === i + 1
+                        ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                        : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <span className="sr-only">Next</span>
+                    <Clock className="h-5 w-5" />
+                  </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Suspend User Modal */}
+      {showSuspendModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-2 sm:mx-0">
+            <div className="p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Suspend User</h3>
+                <button
+                  onClick={closeModals}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-xs sm:text-sm text-gray-600 mb-2">
+                  Are you sure you want to suspend <strong>{selectedUser?.name || selectedUser?.personal_info?.name || 'this user'}</strong>?
+                </p>
+                <p className="text-xs text-gray-500">
+                  User ID: {selectedUser?.user_id} | Mobile: {selectedUser?.mobile || selectedUser?.personal_info?.mobile || 'N/A'}
+                </p>
+              </div>
+
+              <div className="mb-4 sm:mb-6">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                  Suspension Reason (Optional)
+                </label>
+                <textarea
+                  value={suspensionReason}
+                  onChange={(e) => setSuspensionReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm sm:text-base"
+                  rows="3"
+                  placeholder="Enter reason for suspension..."
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+                <button
+                  onClick={closeModals}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors text-sm sm:text-base"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSuspend}
+                  disabled={isProcessing}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm sm:text-base"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span className="hidden sm:inline">Suspending...</span>
+                      <span className="sm:hidden">Suspending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserX className="w-4 h-4" />
+                      <span className="hidden sm:inline">Suspend User</span>
+                      <span className="sm:hidden">Suspend</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-2 sm:mx-0">
+            <div className="p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-red-600 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
+                  Permanently Delete User
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedUser(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-xs sm:text-sm text-red-800 font-medium mb-2">
+                    ⚠️ Warning: This action cannot be undone!
+                  </p>
+                  <p className="text-xs text-red-700">
+                    This will permanently delete the user and all their related data including:
+                  </p>
+                  <ul className="text-xs text-red-700 mt-2 ml-4 list-disc">
+                    <li>User account and profile</li>
+                    <li>All subscriptions</li>
+                    <li>All accounts and transactions</li>
+                    <li>All budgets and expenses</li>
+                    <li>All udhari/customer data</li>
+                    <li>All support tickets</li>
+                    <li>All reminders and notifications</li>
+                  </ul>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs sm:text-sm text-gray-700 mb-2">
+                    <strong>User Details:</strong>
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    <strong>Name:</strong> {selectedUser?.name || 'Unknown User'}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    <strong>User ID:</strong> {selectedUser?.user_id}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    <strong>Mobile:</strong> {selectedUser?.phone_code || ''} {selectedUser?.mobile || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    <strong>Email:</strong> {selectedUser?.email || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedUser(null);
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 text-sm sm:text-base"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteUser}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm sm:text-base"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span className="hidden sm:inline">Deleting...</span>
+                      <span className="sm:hidden">Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">Delete Permanently</span>
+                      <span className="sm:hidden">Delete</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default UserManagement;
