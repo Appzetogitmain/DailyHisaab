@@ -23,13 +23,17 @@ app.use(cors({
             'https://appzetoapp.com',
             'http://appzetoapp.com',
             'https://www.appzetoapp.com',
-            'http://www.appzetoapp.com'
+            'http://www.appzetoapp.com',
+            'https://admin.dailyhisab.co.in',
+            'http://admin.dailyhisab.co.in',
+            'https://dailyhisab.co.in',
+            'http://dailyhisab.co.in',
         ];
 
-        if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('appzetoapp.com')) {
+        if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('dailyhisab.co.in') || origin.includes('appzetoapp.com')) {
             callback(null, true);
         } else {
-            callback(null, true); // Allow all origins for now, can be restricted later
+            callback(null, true);
         }
     },
     credentials: true,
