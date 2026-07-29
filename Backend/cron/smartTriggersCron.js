@@ -57,7 +57,8 @@ const executeRecurringPaymentsTask = async () => {
   console.log('💳 Running Recurring Payments Execution');
   try {
     const port = process.env.PORT || 3000;
-    const API_BASE_URL = `https://appzetoapp.com/daliyhisab/server`;
+    // Always call local server for cron (avoid external DNS / old domain issues)
+    const API_BASE_URL = `http://127.0.0.1:${port}/daliyhisab/server`;
     const API_KEY = process.env.RECURRING_PAYMENTS_API_KEY || 'recurring_payments_2024_secure_key_appzeto';
 
     const response = await fetch(`${API_BASE_URL}/execute_recurring_payments`, {

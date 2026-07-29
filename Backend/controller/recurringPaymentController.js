@@ -140,7 +140,8 @@ const createRecurringPayment = async (request, response) => {
         try {
           const port = process.env.PORT || 3000;
           const API_KEY = process.env.RECURRING_PAYMENTS_API_KEY || 'recurring_payments_2024_secure_key_appzeto';
-          fetch(`https://appzetoapp.com/daliyhisab/server/execute_recurring_payments`, {
+          const executeUrl = `http://127.0.0.1:${port}/daliyhisab/server/execute_recurring_payments`;
+          fetch(executeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
             body: JSON.stringify({})
