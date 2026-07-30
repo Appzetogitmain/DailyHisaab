@@ -118,7 +118,7 @@ class SMSIndiaHubService {
           messageId: `test_${Date.now()}`,
           status: 'skipped',
           to: normalizedPhone,
-          body: `Welcome to the DailyHisab Pro powered by SMSINDIAHUB. Your OTP for registration is 123456`,
+          body: `Welcome to the DailyHisab Pro powered by Appzeto.Your OTP for registration is 123456.BGADEC`,
           provider: 'SMSIndia Hub (Test Mode)',
           isTestMode: true,
           note: 'SMS skipped for test number, OTP is 123456'
@@ -127,7 +127,9 @@ class SMSIndiaHubService {
 
       // Load credentials dynamically
       const apiKey = this.apiKey || process.env.SMSINDIAHUB_API_KEY;
-      const senderId = this.senderId || process.env.SMSINDIAHUB_SENDER_ID;
+      const senderId = this.senderId || process.env.SMSINDIAHUB_SENDER_ID || 'BGADEC';
+      const entityId = process.env.SMSINDIAHUB_ENTITY_ID || '1001164203633432409';
+      const templateId = process.env.SMSINDIAHUB_TEMPLATE_ID || '1007282516644508833';
       
       if (!apiKey || !senderId) {
         throw new Error('SMSIndia Hub not configured. Please check your environment variables.');
@@ -138,8 +140,10 @@ class SMSIndiaHubService {
         throw new Error(`Invalid phone number format: ${phone}. Expected 10-digit Indian mobile number.`);
       }
 
-      // Use the OTP message template for Daily Hisab Pro (same format as createbharat)
-      const message = `Welcome to the DailyHisab Pro powered by SMSINDIAHUB. Your OTP for registration is ${otp}`;
+      // Must match DLT approved template exactly:
+      // Welcome to the ##var## powered by Appzeto.Your OTP for registration is ##var##.BGADEC
+      const brandName = process.env.SMS_BRAND_NAME || 'DailyHisab Pro';
+      const message = `Welcome to the ${brandName} powered by Appzeto.Your OTP for registration is ${otp}.BGADEC`;
 
       // Build the API URL with query parameters
       const params = new URLSearchParams({
@@ -147,9 +151,11 @@ class SMSIndiaHubService {
         msisdn: normalizedPhone,
         sid: senderId,
         msg: message,
-        fl: '0', // Flash message flag (0 = normal SMS)
-        dc: '0', // Delivery confirmation (0 = no confirmation)
-        gwid: '2' // Gateway ID (2 = transactional)
+        fl: '0',
+        dc: '0',
+        gwid: '2',
+        EntityID: entityId,
+        TemplateID: templateId
       });
 
       const apiUrl = `${this.baseUrl}?${params.toString()}`;
@@ -167,9 +173,18 @@ class SMSIndiaHubService {
 
       console.log('SMSIndia Hub Response Status:', response.status);
       console.log('SMSIndia Hub Response Data:', response.data);
+      console.log('SMSIndia Hub Sender ID used:', senderId);
 
-      // SMSIndia Hub returns JSON response
+      // SMSIndia Hub returns JSON or plain text like "Failed#senderid not valid"
       const responseData = response.data;
+      const responseText = typeof responseData === 'string'
+        ? responseData
+        : JSON.stringify(responseData);
+
+      if (typeof responseData === 'string' && responseData.toLowerCase().includes('failed')) {
+        console.error(`❌ SMSIndia Hub failed: ${responseData}`);
+        throw new Error(`SMSIndia Hub failed: ${responseData}`);
+      }
 
       // Check for success indicators in the response
       if (responseData.ErrorCode === '000' && responseData.ErrorMessage === 'Done') {
@@ -193,17 +208,8 @@ class SMSIndiaHubService {
         console.error(`❌ SMSIndia Hub API error: ${responseData.ErrorMessage} (Code: ${responseData.ErrorCode})`);
         throw new Error(`SMSIndia Hub API error: ${responseData.ErrorMessage} (Code: ${responseData.ErrorCode})`);
       } else {
-        // Fallback for unexpected response format
-        console.log(`⚠️ Unexpected response format, assuming success`);
-        return {
-          success: true,
-          messageId: `sms_${Date.now()}`,
-          status: 'sent',
-          to: normalizedPhone,
-          body: message,
-          provider: 'SMSIndia Hub',
-          response: responseData
-        };
+        console.error(`❌ Unexpected SMSIndia Hub response: ${responseText}`);
+        throw new Error(`Unexpected SMSIndia Hub response: ${responseText}`);
       }
 
     } catch (error) {
