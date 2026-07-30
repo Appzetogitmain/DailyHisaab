@@ -84,13 +84,15 @@ const loginWithMobile = async (request, response) => {
                 if (updateUserResult.affectedRows > 0) {
                     await DeviceTokenStore_1_Signal(user_id, device_type, player_id, function (result) { });
 
-                    // Send OTP via SMS India Hub
-                    const formattedMobile = smsIndiaHubService.formatMobileNumber(phone_code, mobile);
-                    const smsResult = await smsIndiaHubService.sendOTP(formattedMobile, otp);
-
-                    if (!smsResult.success) {
-                        console.error('Failed to send OTP via SMS India Hub:', smsResult.error);
-                        // Continue with response even if SMS fails - OTP is still stored in DB
+                    // Send OTP via SMS India Hub (do not fail login if SMS provider errors)
+                    try {
+                        const formattedMobile = smsIndiaHubService.formatMobileNumber(phone_code, mobile);
+                        const smsResult = await smsIndiaHubService.sendOTP(formattedMobile, otp);
+                        if (!smsResult.success) {
+                            console.error('Failed to send OTP via SMS India Hub:', smsResult.error);
+                        }
+                    } catch (smsError) {
+                        console.error('Failed to send OTP via SMS India Hub:', smsError.message);
                     }
 
                     fetchUserData(user_id, async (error, userDataArray) => {
