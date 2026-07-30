@@ -145,6 +145,10 @@ class SMSIndiaHubService {
       const brandName = process.env.SMS_BRAND_NAME || 'DailyHisab Pro';
       const message = `Welcome to the ${brandName} powered by Appzeto.Your OTP for registration is ${otp}.BGADEC`;
 
+      // gwid: 1 = Promotional, 2 = Transactional
+      // BGADEC is currently Approved as Promotional on SMSIndia Hub, so default to 1
+      const gatewayId = process.env.SMSINDIAHUB_GWID || '1';
+
       // Build the API URL with query parameters
       const params = new URLSearchParams({
         APIKey: apiKey,
@@ -153,7 +157,7 @@ class SMSIndiaHubService {
         msg: message,
         fl: '0',
         dc: '0',
-        gwid: '2',
+        gwid: gatewayId,
         EntityID: entityId,
         TemplateID: templateId
       });
@@ -161,6 +165,7 @@ class SMSIndiaHubService {
       const apiUrl = `${this.baseUrl}?${params.toString()}`;
 
       console.log(`📱 Sending OTP via SMSIndia Hub to ${normalizedPhone}`);
+      console.log(`SMSIndia Hub config => sid=${senderId}, gwid=${gatewayId}, EntityID=${entityId}, TemplateID=${templateId}`);
 
       // Make GET request to SMSIndia Hub API
       const response = await axios.get(apiUrl, {
@@ -280,7 +285,7 @@ class SMSIndiaHubService {
         msg: message,
         fl: '0', // Flash message flag (0 = normal SMS)
         dc: '0', // Delivery confirmation (0 = no confirmation)
-        gwid: '2' // Gateway ID (2 = transactional)
+        gwid: process.env.SMSINDIAHUB_GWID || '1'
       });
 
       const apiUrl = `${this.baseUrl}?${params.toString()}`;
